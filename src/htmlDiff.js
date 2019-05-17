@@ -1,73 +1,79 @@
 import {
-  DiffDOM,
-  nodeToObj,
-  stringToObj
+  nodeToObj
 } from "diff-dom"
+import DiffDOM from './diffDom'
+import stringToObj from './stringToObj'
+import * as _ from 'lodash'
 import * as fastDiff from 'fast-diff'
 
 const diffDOM = new DiffDOM
 const diffStr = fastDiff.default
 
 export function htmlDiff(from, to) {
+  from = `<div>${from}</div>`
+  to = `<div>${to}</div>`
   let diff = diffDOM.diff(from, to)
   let fromNode = stringToObj(from)
   let toNode = stringToObj(to)
+  let cloneNode = _.cloneDeep(toNode)
+  if (!cloneNode.childNodes) {
+    cloneNode.childNodes = []
+  }
+  console.log('cloneNode', cloneNode)
+  let rmArr = []
 
   console.log('htmlDiff', diff, fromNode, toNode)
   diff.forEach(d => {
+    console.log('d', d)
     if (d.action === 'modifyTextElement') {
       let s = diffStr(d.oldValue, d.newValue)
-      let c = getFromVirtualRoute(fromNode, d.route)
+      let c = getFromVirtualRoute(cloneNode, d.route)
       console.log('s', s, c)
       let newNodes = s.map(item => {
         if (item[0] === 0) {
-          return {
-            nodeName: 'span',
-            attributes: {
-              class: 'equal'
-            },
-            childNodes: [
-              {
-                nodeName: '#text',
-                data: item[1]
-              }
-            ]
-          }
+          return spanObj({
+            class: 'equal',
+            text: item[1]
+          })
         } else if (item[0] === 1) {
-          return {
-            nodeName: 'span',
-            attributes: {
-              class: 'insert'
-            },
-            childNodes: [
-              {
-                nodeName: '#text',
-                data: item[1]
-              }
-            ]
-          }
+          return spanObj({
+            class: 'insert',
+            text: item[1]
+          })
         } else if (item[0] === -1) {
-          return {
-            nodeName: 'span',
-            attributes: {
-              class: 'delete'
-            },
-            childNodes: [
-              {
-                nodeName: '#text',
-                data: item[1]
-              }
-            ]
-          }
+          return spanObj({
+            class: 'delete',
+            text: item[1]
+          })
         }
       })
       c.parentNode.childNodes = newNodes
-      console.log('from-111', fromNode)
     } else if (d.action === 'addElement') {
-      
+      let c = getFromVirtualRoute(cloneNode, d.route)
+      insertAttribute(c.node, {
+        class: 'insert'
+      })
+    } else if (d.action === 'removeElement') {
+      let c = getFromVirtualRoute(fromNode, d.route)
+      let p = getFromVirtualRoute(cloneNode, d.route).parentNode
+      console.log('p', p, d)
+      insertAttribute(d.element, {
+        class: 'delete'
+      })
+      rmArr.push({
+        node: _.cloneDeep(d.element),
+        parentNode: p,
+        idx: c.nodeIndex
+      })
     }
   })
-  let resultNode = objToNode(fromNode, false, {
+  console.log('rmArr', rmArr)
+  rmArr.forEach(item => {
+    console.log('11111', item)
+    item.parentNode.childNodes.splice(item.idx, 0, item.node)
+  })
+  console.log('cloneNode', cloneNode)
+  let resultNode = objToNode(cloneNode, false, {
     document: document
   })
   console.log(resultNode)
@@ -75,6 +81,7 @@ export function htmlDiff(from, to) {
 }
 
 export function objToNode(objNode, insideSvg, options) {
+  console.log('objNode', objNode)
   let node
   if (objNode.nodeName === '#text') {
     node = options.document.createTextNode(objNode.data)
@@ -89,6 +96,7 @@ export function objToNode(objNode, insideSvg, options) {
       node = options.document.createElement(objNode.nodeName)
     }
     if (objNode.attributes) {
+      console.log('aaa', objNode.attributes, objNode)
       Object.entries(objNode.attributes).forEach(([key, value]) => node.setAttribute(key, value))
     }
     if (objNode.childNodes) {
@@ -111,7 +119,7 @@ export function objToNode(objNode, insideSvg, options) {
 
 function getFromVirtualRoute(tree, route) {
   let node = tree
-  console.log('getFromVirtualRoute', node)
+  console.log('getFromVirtualRoute', node, route)
   let parentNode
   let nodeIndex
 
@@ -128,6 +136,39 @@ function getFromVirtualRoute(tree, route) {
     node,
     parentNode,
     nodeIndex
+  }
+}
+
+function spanObj (opts) {
+  return {
+    nodeName: 'span',
+    attributes: {
+      class: opts.class || ''
+    },
+    childNodes: [
+      {
+        nodeName: '#text',
+        data: opts.text
+      }
+    ]
+  }
+}
+
+function insertAttribute (node, attr) {
+  console.log('insertAttribute', node, attr)
+  if (node.attributes) {
+    Object.keys(attr).forEach(key => {
+      if (node.attributes.hasOwnProperty(key)) {
+        console.log('key', key)
+        if (node.attributes[key].indexOf(attr[key]) === -1) {
+          node.attributes[key] += ` ${attr[key]}`
+        }
+      } else {
+        node.attributes[key] = `${attr[key]}`
+      }
+    })
+  } else {
+    node.attributes = attr
   }
 }
 
